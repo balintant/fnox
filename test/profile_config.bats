@@ -525,3 +525,34 @@ EOF
 	assert_success
 	assert_output --partial 'TEST_SECRET_DEFAULT'
 }
+
+@test '--profile reaches undeclared FNOX_PROFILE references in defaults and the child' {
+	cat >fnox.toml <<'EOF'
+root = true
+
+[secrets]
+APP_ENV = { default = "${FNOX_PROFILE}" }
+
+[profiles.production]
+EOF
+
+	run env -u FNOX_PROFILE "$FNOX_BIN" --profile production exec -- sh -c 'echo "app_env=$APP_ENV profile=$FNOX_PROFILE"'
+	assert_success
+	assert_output --partial "app_env=production profile=production"
+}
+
+@test 'a declared FNOX_PROFILE secret wins over the active profile in defaults' {
+	cat >fnox.toml <<'EOF'
+root = true
+
+[secrets]
+FNOX_PROFILE = { default = "declared" }
+APP_ENV = { default = "${FNOX_PROFILE}" }
+
+[profiles.production]
+EOF
+
+	run env -u FNOX_PROFILE "$FNOX_BIN" --profile production get APP_ENV
+	assert_success
+	assert_output "declared"
+}

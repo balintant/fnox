@@ -152,20 +152,37 @@ fn render_default_template(
             )));
         }
 
-        let value = resolved.get(name).ok_or_else(|| {
-            FnoxError::Config(format!(
-                "Secret '{}' references '{}' in default value, but '{}' did not resolve",
-                key, name, name
-            ))
-        })?;
-        if let Some(value) = value {
-            rendered.push_str(value);
+        match resolved.get(name) {
+            Some(Some(value)) => rendered.push_str(value),
+            Some(None) => {}
+            None if is_profile_reference(name) => rendered.push_str(&active_profiles()),
+            None => {
+                return Err(FnoxError::Config(format!(
+                    "Secret '{}' references '{}' in default value, but '{}' did not resolve",
+                    key, name, name
+                )));
+            }
         }
         rest = &after_start[end + 1..];
     }
 
     rendered.push_str(rest);
     Ok(rendered)
+}
+
+/// `${FNOX_PROFILE}` may be used in a default without declaring a secret of
+/// that name. A declared `FNOX_PROFILE` secret takes precedence.
+fn is_profile_reference(name: &str) -> bool {
+    name == "FNOX_PROFILE"
+}
+
+/// The active profiles, in the same comma-joined format as `FNOX_PROFILE`.
+///
+/// Reads the env var, which `--profile` also sets, so a daemon resolving on a
+/// client's behalf sees the client's profiles.
+fn active_profiles() -> String {
+    let profiles = env::var("FNOX_PROFILE").unwrap_or_default();
+    Config::display_profiles(&Config::normalize_profiles(&[profiles]))
 }
 
 fn default_reference_error(key: &str, reference: &str) -> FnoxError {
@@ -233,6 +250,9 @@ fn collect_interpolation_closure(
             {
                 for reference in extract_default_references(default) {
                     if !self.secrets.contains_key(&reference) {
+                        if is_profile_reference(&reference) {
+                            continue;
+                        }
                         return Err(default_reference_error(key, &reference));
                     }
                     self.visit(&reference)?;
@@ -501,7 +521,9 @@ fn resolve_default_fallbacks(
                 .map(extract_default_references)
                 .unwrap_or_default();
             let unresolved_external_ref = refs.iter().any(|reference| {
-                !context.contains_key(reference) && !pending_set.contains(reference)
+                !context.contains_key(reference)
+                    && !pending_set.contains(reference)
+                    && !(is_profile_reference(reference) && !secrets.contains_key(reference))
             });
             if unresolved_external_ref {
                 continue;
@@ -902,7 +924,7 @@ async fn resolve_secrets_batch_in_scope(
         for reference in refs {
             if secret_keys.contains(reference.as_str()) {
                 deps.push(reference);
-            } else if hard_default {
+            } else if hard_default && !is_profile_reference(&reference) {
                 return Err(default_reference_error(key, &reference));
             }
         }
@@ -1740,6 +1762,29 @@ mod tests {
                 .and_then(|value| value.as_ref()),
             Some(&"postgres://app:secret@localhost:5432/fnox".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn test_interpolated_default_allows_undeclared_fnox_profile() {
+        let mut config = Config::new();
+        config
+            .secrets
+            .insert("APP_ENV".to_string(), default_secret("app-${FNOX_PROFILE}"));
+        let secrets = config.get_secrets(&profile("default")).unwrap();
+        let expected = format!("app-{}", active_profiles());
+
+        let resolved = resolve_secrets_batch(&config, &profile("default"), &secrets)
+            .await
+            .unwrap();
+        assert_eq!(
+            resolved.get("APP_ENV").cloned().flatten().as_ref(),
+            Some(&expected)
+        );
+
+        let single = resolve_secret(&config, &profile("default"), "APP_ENV", &secrets["APP_ENV"])
+            .await
+            .unwrap();
+        assert_eq!(single.as_ref(), Some(&expected));
     }
 
     #[tokio::test]

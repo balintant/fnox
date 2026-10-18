@@ -48,6 +48,13 @@ async fn run(argv: Vec<std::ffi::OsString>) -> miette::Result<()> {
     settings::Settings::set_cli_layer(settings_layer);
     fnox::env::set_non_interactive(cli.non_interactive);
 
+    // `--profile` behaves like `FNOX_PROFILE`: secrets that read the env var and
+    // child processes see the selected profiles either way.
+    let profiles = fnox::config::Config::get_profiles(&cli.profile);
+    if !cli.profile.is_empty() && !profiles.is_empty() {
+        fnox::env::set_var("FNOX_PROFILE", profiles.join(","));
+    }
+
     // Handle --no-color flag
     if cli.no_color {
         console::set_colors_enabled(false);
