@@ -121,6 +121,16 @@ TOML
 	assert_file_not_exists "$STUB_LOG"
 }
 
+@test "push --target ignores other targets the profile does not define" {
+	cat >>fnox.toml <<'TOML'
+WEB_ONLY = { provider = "plain", value = "x", push = ["gh", "vercel-env"] }
+TOML
+	run "$FNOX_BIN" push --force --target gh WEB_ONLY
+	assert_success
+	run cat "$STUB_LOG"
+	assert_output "gh secret set WEB_ONLY --repo jdx/fnox|x"
+}
+
 @test "push --dry-run rejects an invalid target config" {
 	single_target 'type = "github-actions"
 repo = "jdx/fnox"

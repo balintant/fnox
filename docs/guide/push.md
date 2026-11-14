@@ -62,7 +62,7 @@ fnox push --target gh-prod      # every secret that goes to gh-prod
 fnox push --force               # no confirmation prompt, for scripts
 ```
 
-fnox checks every target name and target config before it resolves or pushes anything, so a typo in `push` fails the whole command. If one write fails, fnox keeps going with the rest, then exits non-zero and lists the failures.
+fnox checks every target name and target config before it resolves or pushes anything, so a typo in `push` fails the whole command. With `--target`, only the selected targets are checked, so a profile can leave out targets it never pushes to. If one write fails, fnox keeps going with the rest, then exits non-zero and lists the failures.
 
 ## Profiles
 

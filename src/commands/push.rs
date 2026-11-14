@@ -190,10 +190,13 @@ impl PushCommand {
             }
             let mut names = Vec::new();
             for name in &secret.push {
+                if !self.target.is_empty() && !self.target.contains(name) {
+                    continue;
+                }
                 if !targets.contains_key(name) {
                     return Err(unknown_target(name, Some(key), targets));
                 }
-                if (self.target.is_empty() || self.target.contains(name)) && !names.contains(name) {
+                if !names.contains(name) {
                     names.push(name.clone());
                 }
             }
